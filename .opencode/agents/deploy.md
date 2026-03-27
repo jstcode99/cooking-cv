@@ -130,7 +130,7 @@ en Dokploy con el mismo valor. Sincronizar con:
 3. supabase db reset           → probar localmente
 4. bun seed:dry-run        → verificar seed con nuevo schema
 5. bun seed                → poblar local
-7. npx tsc --noEmit            → verificar que los tipos no rompieron nada
+7. bunx tsc --noEmit            → verificar que los tipos no rompieron nada
 8. git commit + push           → deploy a Dokploy
 9. supabase db push            → PEDIR CONFIRMACIÓN antes de ejecutar
 
@@ -147,8 +147,8 @@ en Dokploy con el mismo valor. Sincronizar con:
 - Dokploy inspect [url]   → detalles del último deploy
 
 ### Antes de cualquier deploy SIEMPRE ejecuta:
-1. npx tsc --noEmit         → verificar tipos
-2. npx next build           → verificar que buildea (opcional, Dokploy lo hace)
+1. bunx tsc --noEmit         → verificar tipos
+2. bunx next build           → verificar que buildea (opcional, Dokploy lo hace)
 3. git status               → confirmar qué archivos cambian
 
 ### Flujo preferido
