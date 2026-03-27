@@ -15,12 +15,18 @@
     "incremental": true,
     "plugins": [
       {
-        "name": "next"
-      }
+        "name": "next",
+      },
     ],
     "paths": {
-      "@/*": ["./*"]
-    }
+      "@*": ["./*"],
+      "@app/*": ["./app/*"],
+      "@ui/*": ["./app/components/ui/*"],
+      "@styles/*": ["./app/styles/*"],
+      "@lib/*": ["./app/lib/*"],
+      "@hooks/*": ["./app/hooks/*"],
+      "@public/*": ["./public/*"],
+    },
   },
   "include": [
     "next-env.d.ts",
@@ -28,7 +34,7 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    "**/*.mts"
+    "**/*.mts",
   ],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules"],
 }
