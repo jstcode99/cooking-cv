@@ -45,24 +45,22 @@ cd ~/projects/cooking-cv-<slug>  # SIEMPRE trabajar en el worktree
 ## Patrones obligatorios del proyecto
 
 ### Orden de implementación de una entidad nueva
-1. `domain/entities/<entidad>.entity.ts` + enums
-2. `domain/ports/<entidad>.port.ts`
-3. `domain/services/<entidad>.service.ts` — con métodos `getCached*` para reads
-4. `infrastructure/adapters/supabase/supabase-<entidad>.adapter.ts`
-5. `application/validation/<entidad>.schema.ts` — usar schemas base de `validation/base/`
-6. `application/mappers/<entidad>.mapper.ts`
-7. `application/modules/app.module.ts` — registrar adapter y servicio
-8. `application/actions/<entidad>.actions.ts` — siempre `withServerAction`
+1. `types/<type>.ts` + enums - generadas por supabase
+2. `modules/<module>`
+3. `modules/<module>/<service>.ts` — con métodos `getCached*` para reads
+5. `modules/<module>/<schema>.ts` — usar schemas base de `common/schemas.ts`
+6. `modules/<module>/<mapper>.ts`
+8. `modules/<module>/<action>.ts`
+7. `modules/app.modules.ts` — regista los modulos a nivel general
 9. `features/<dominio>/` — componentes UI
 10. `app/[lang]/` — rutas/páginas
 
 ### Reglas no negociables
-- `withServerAction` en todos los Server Actions — nunca try/catch manual
-- `appModule()` es el único lugar donde se instancian adapters y servicios
-- Clientes Supabase solo desde `infrastructure/db/` — nunca directamente
+- `appModule()` es el único lugar donde se instancian los servicios
+- Clientes Supabase solo desde `@lib/supabase` — nunca directamente
 - `CACHE_TAGS` de `constants.ts` — nunca strings crudos en `revalidateTag`
 - `@/` para todos los imports — nunca rutas relativas
-- Sin `any` en TypeScript (excepto mappers con rows de Supabase)
+- Sin `any` en TypeScript
 - Traducciones siempre en `locales/es/` Y `locales/en/` al mismo tiempo
 - Issues solo en Linear — nunca GitHub Issues
 
