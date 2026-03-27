@@ -40,11 +40,10 @@ bun lint           # ESLint
 
 ## Checklist de patrones
 
-- [ ] `withServerAction` en todos los Server Actions (sin try/catch manual)
 - [ ] Adapters y servicios solo en `appModule()`
-- [ ] Clientes Supabase solo desde `infrastructure/db/`
+- [ ] Clientes Supabase solo desde `lib/supabase/`
 - [ ] `CACHE_TAGS` en `revalidateTag` (no strings crudos)
-- [ ] Sin `any` en TypeScript fuera de mappers
+- [ ] Sin `any` en TypeScript
 - [ ] Imports con `@/` (sin rutas relativas)
 - [ ] Traducciones en `locales/es/` y `locales/en/`
 
