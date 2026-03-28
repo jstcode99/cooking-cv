@@ -25,26 +25,26 @@ cooking-cv es una sistema de adaptador de cv para ofertas.
 Entidades: `types/<type>.ts` + enums - generadas por supabase
 Arquitectura: `
 src/
-├── app/                  # (Routing) Solo define rutas, layouts y recibe params
-│   ├── (auth)/           # Grupos de rutas
+├── app/                                           # (Routing) Solo define rutas, layouts y recibe params
+│   ├── (auth)/                                    # Grupos de rutas
 │   ├── dashboard/
-│   └── api/              # Webhooks o endpoints externos
-├── components/           # UI Compartida
-│   ├── ui/               # Componentes de shadcn (atómicos)
-│   └── shared/           # Botones complejos, headers, etc.
-├── modules/              # 🎯 EL NÚCLEO (Domain/Feature Layer)
-│   ├── tickets/          # Ejemplo de un dominio
-│   │   ├── components/   # UI específica de tickets (DataTables, Forms)
-│   │   ├── actions.ts    # Server Actions (Equivalente al "Controller")
-│   │   ├── services.ts   # Llamadas a Supabase (Equivalente al "Model/Repo")
-│   │   ├── schema.ts     # Validaciones Zod y tipos de TS
-│   │   └── hooks.ts      # Hooks específicos (si aplica)
-│   └── users/            # Otro dominio...
-├── lib/                  # Configuraciones globales
-│   ├── supabase/         # Clientes (client.ts, server.ts, admin.ts)
-│   └── utils.ts          # Utils de tailwind/shadcn
-├── hooks/                # Hooks globales (use-mobile, etc.)
-└── types/                # Tipos globales o generados por Supabase CLI
+│   └── api/                                       # Webhooks o endpoints externos
+├── components/                                    # UI Compartida
+│   ├── ui/                                        # Componentes de shadcn (atómicos)
+│   └── shared/                                    # Botones complejos, headers, etc.
+├── modules/                                       # 🎯 EL NÚCLEO (Domain/Feature Layer)
+│   ├── tickets/                                   # Ejemplo de un dominio
+│   │   ├── components/components.tsx              # UI específica de tickets (DataTables, Forms)
+│   │   ├── actions/ticket.actions.ts              # Server Actions (Equivalente al "Controller")
+│   │   ├── services/ticket.services.ts            # Llamadas a Supabase (Equivalente al "Model/Repo")
+│   │   ├── validations/tickets.validation.ts      # Validaciones Zod y tipos de TS
+│   │   └── hooks.ts                               # Hooks específicos (si aplica)
+│   └── users/                                     # Otro dominio...
+├── lib/                                           # Configuraciones globales
+│   ├── supabase/                                  # Clientes (client.ts, server.ts, admin.ts)
+│   └── utils.ts                                   # Utils de tailwind/shadcn
+├── hooks/                                         # Hooks globales (use-mobile, etc.)
+└── types/                                         # Tipos globales o generados por Supabase CLI
 `
 
 ## Calidad de un buen issue
@@ -65,7 +65,7 @@ Prioridad: urgent | high | medium | low
 
 ## Descomposición de features grandes
 
-1. Issue de module: actions, components, services, schema, hooks
+1. Issue de module: actions, components, services, validations, hooks
 2. Issue de supabase: Supabase, migración SQL
 4. Issue de UI: /module/<module>/componensts/
 

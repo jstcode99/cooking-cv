@@ -46,17 +46,17 @@ cd ~/projects/cooking-cv-<slug>  # SIEMPRE trabajar en el worktree
 
 ### Orden de implementación de una entidad nueva
 1. `types/<type>.ts` + enums - generadas por supabase
-2. `modules/<module>`
-3. `modules/<module>/<service>.ts` — con métodos `getCached*` para reads
-5. `modules/<module>/<schema>.ts` — usar schemas base de `common/schemas.ts`
-6. `modules/<module>/<mapper>.ts`
-8. `modules/<module>/<action>.ts`
-7. `modules/app.modules.ts` — regista los modulos a nivel general
+2. `@modules/<module>`
+3. `@modules/<module>/services/<service>.service.ts` — con métodos `getCached*` para reads
+5. `@modules/<module>/validations/<validation>.validation.ts` — usar validations base de `common/validations.ts`
+6. `@modules/<module>/mappers/<mapper>.mapper.ts`
+8. `@modules/<module>/actions/<action>.action.ts`
+7. `@modules/app.modules.ts` — regista los modulos a nivel general
 9. `features/<dominio>/` — componentes UI
 10. `app/[lang]/` — rutas/páginas
 
 ### Reglas no negociables
-- `appModule()` es el único lugar donde se instancian los servicios
+- `modules()` es el único lugar donde se instancian los servicios
 - Clientes Supabase solo desde `@lib/supabase` — nunca directamente
 - `CACHE_TAGS` de `constants.ts` — nunca strings crudos en `revalidateTag`
 - `@/` para todos los imports — nunca rutas relativas

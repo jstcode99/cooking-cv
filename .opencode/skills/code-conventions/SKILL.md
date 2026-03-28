@@ -16,17 +16,24 @@ Todo action vive en `src/modules/<dominio>/actions.ts` con esta estructura exact
 "use server";
 
 import { revalidatePath, revalidateTag } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
-import { myEntitySchema } from "./schema";
+import { createClient } from "@supabase/server";
+import { moduleValidation } from "@modules/<module>/validations/some.validation";
+import { useTranslation } from "react-i18next";
+import { initI18n } from "@i18n/server";
 
-export async function createMyEntityAction(formData: FormData) {
+export async function createModuleAction(formData: FormData) {
   const supabase = await createClient();
+  const lang = await getLangServerSide();
+  const i18n = await initI18n(lang);
+  const t = i18n.getFixedT(lang);
+  const routes = createRouter(lang);
+
 
   const raw = Object.fromEntries(formData);
-  const input = myEntitySchema.parse(raw);
+  const input = moduleValidation.parse(raw);
 
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthorized");
+  if (!user) throw new Error(t('module:exceptions.some'));
 
   const { error } = await supabase
     .from("my_entities")
@@ -34,7 +41,9 @@ export async function createMyEntityAction(formData: FormData) {
 
   if (error) throw new Error(error.message);
 
-  revalidatePath("/dashboard/my-entities");
+ revalidatePath(routes.module());
+ // if neccesary 
+ revalidateTag(CACHE_TAGS.MODULE.ALL, { expire: 0 });
 }
 ```
 
@@ -45,25 +54,30 @@ export async function createMyEntityAction(formData: FormData) {
 - Verificar auth con `supabase.auth.getUser()` cuando la operación lo requiera
 - Invalidar rutas con `revalidatePath` y/o tags con `revalidateTag`
 - Sin capas intermedias: el action llama **directamente** a Supabase, no a un servicio ni adapter
+- kebab-case para los nombres de los archivos `some-one.<ext>`
 
 ## Services — Queries de lectura
 
-Todo read/query vive en `src/modules/<dominio>/services.ts`:
+Todo read/query vive en `src/modules/<dominio>/services/some.service.ts`:
 
 ```typescript
 import { unstable_cache } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@lib/supabase/server";
 
 // Sin cache — para reads directos o datos que cambian mucho
 export async function getMyEntityById(id: string) {
   const supabase = await createClient();
+  const lang = await getLangServerSide();
+  const i18n = await initI18n(lang);
+  const t = i18n.getFixedT(lang);
+  
   const { data, error } = await supabase
     .from("my_entities")
     .select("*")
     .eq("id", id)
     .single();
 
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(t('module:exceptions.some'));
   return data;
 }
 
@@ -71,15 +85,19 @@ export async function getMyEntityById(id: string) {
 export const getCachedMyEntities = unstable_cache(
   async () => {
     const supabase = await createClient();
+    const lang = await getLangServerSide();
+    const i18n = await initI18n(lang);
+    const t = i18n.getFixedT(lang);
+    
     const { data, error } = await supabase
       .from("my_entities")
       .select("*");
 
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(t('module:exceptions.some'));
     return data;
   },
-  ["my-entities-all"],
-  { revalidate: 300, tags: ["my-entities"] },
+  [CACHE_TAGS.SOME.THING()],
+  { revalidate: 300, tags: [CACHE_TAGS.SOME, CACHE_TAGS.SOME.KEY] },
 );
 ```
 
@@ -87,16 +105,23 @@ export const getCachedMyEntities = unstable_cache(
 - Solo lecturas (`select`) — las escrituras van siempre en `actions.ts`
 - Instanciar `createClient()` **dentro** de cada función — no a nivel módulo
 - Exponer dos variantes cuando aplique: función directa + `getCached*` con `unstable_cache`
-- Importar el cliente desde `@/lib/supabase/server` — nunca el cliente browser
+- Importar el cliente desde `@lib/supabase/server` — nunca el cliente browser
 
-## Schemas Zod
+## validations Zod
 
 ```typescript
 // src/modules/<dominio>/schema.ts
 import { z } from "zod";
+import i18next from "i18next";
 
 export const myEntitySchema = z.object({
-  name: z.string().min(1, "El nombre es requerido").max(100),
+  name: z.string().min(
+    0,
+    i18next.t("validations:min.numeric", {
+      attribute: "built_area",
+      min: "0",
+    }),
+  ).max(100),
   description: z.string().optional(),
 });
 
@@ -108,15 +133,15 @@ export const defaultMyEntityValues: MyEntityInput = {
 };
 ```
 
-**Reglas de schemas:**
+**Reglas de validations:**
 - Usar **Zod** (no Yup) — `.parse()` para validar en actions, `safeParse()` cuando se quiere manejar el error manualmente
-- El schema es la **fuente de verdad** de tipos: siempre `z.infer<typeof schema>` en lugar de tipos manuales
-- Un archivo `schema.ts` por módulo — si crece mucho, dividir en `schema/<nombre>.schema.ts` dentro del módulo
+- El validation es la **fuente de verdad** de tipos: siempre `z.infer<typeof validation>` en lugar de tipos manuales
+- Un archivo `validation.ts` por módulo — si crece mucho, dividir en `validation/<name>.validation.ts` dentro del módulo
 - Los actions y hooks del mismo módulo lo importan con `"./schema"` (relativo)
 
 ## Formularios en Client Components
 
-Usar `react-hook-form` con `zodResolver` y los componentes de `@/components/ui/form`:
+Usar `react-hook-form` con `zodResolver` y los componentes de `@components/ui/form`:
 
 ```typescript
 "use client";
@@ -124,14 +149,43 @@ Usar `react-hook-form` con `zodResolver` y los componentes de `@/components/ui/f
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Form } from "@/components/ui/form";
-import { myEntitySchema, MyEntityInput, defaultMyEntityValues } from "../schema";
-import { createMyEntityAction } from "../actions";
+import * as React from "react"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { Controller, useForm } from "react-hook-form"
+import { toast } from "sonner"
+import * as z from "zod"
+import { Button } from "@components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@components/ui/card"
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@components/ui/field"
+import { Input } from "@components/ui/input"
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupText,
+  InputGroupTextarea,
+} from "@components/ui/input-group"
+import { moduleValidation, ModuleInput, defaultModuleValues } from "@modules/<module>/validations/some.validation";
+import { createModuleAction } from "@modules/<module>/actions/some.action";
 
 export function MyEntityForm() {
+  const { t } = useTranslation("module");
+  
   const form = useForm<MyEntityInput>({
-    resolver: zodResolver(myEntitySchema),
-    defaultValues: defaultMyEntityValues,
+    resolver: zodResolver(moduleValidation),
+    defaultValues: defaultModuleValues,
     mode: "onBlur",
   });
 
@@ -141,7 +195,7 @@ export function MyEntityForm() {
 
     try {
       await createMyEntityAction(formData);
-      toast.success("Creado correctamente");
+      toast.success(t("messages.success.sent"));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error inesperado");
     }
@@ -149,10 +203,64 @@ export function MyEntityForm() {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)}>
-        {/* Usar <Form.Field>, <Form.Item>, <Form.Label>, <Form.Control>, <Form.Message> */}
-        {/* Para formularios grandes, dividir en secciones con <Form.Set> */}
-      </form>
+    <form id="form-rhf-demo" onSubmit={form.handleSubmit(onSubmit)}>
+      <FieldGroup>
+        <Controller
+          name="title"
+          control={form.control}
+          render={({ field, fieldState }) => (
+            <Field data-invalid={fieldState.invalid}>
+              <FieldLabel htmlFor="form-rhf-demo-title">
+                Bug Title
+              </FieldLabel>
+              <Input
+                {...field}
+                id="form-rhf-demo-title"
+                aria-invalid={fieldState.invalid}
+                placeholder="Login button not working on mobile"
+                autoComplete="off"
+              />
+              {fieldState.invalid && (
+                <FieldError errors={[fieldState.error]} />
+              )}
+            </Field>
+          )}
+        />
+        <Controller
+          name="description"
+          control={form.control}
+          render={({ field, fieldState }) => (
+            <Field data-invalid={fieldState.invalid}>
+              <FieldLabel htmlFor="form-rhf-demo-description">
+                Description
+              </FieldLabel>
+              <InputGroup>
+                <InputGroupTextarea
+                  {...field}
+                  id="form-rhf-demo-description"
+                  placeholder="I'm having an issue with the login button on mobile."
+                  rows={6}
+                  className="min-h-24 resize-none"
+                  aria-invalid={fieldState.invalid}
+                />
+                <InputGroupAddon align="block-end">
+                  <InputGroupText className="tabular-nums">
+                    {field.value.length}/100 characters
+                  </InputGroupText>
+                </InputGroupAddon>
+              </InputGroup>
+              <FieldDescription>
+                Include steps to reproduce, expected behavior, and what
+                actually happened.
+              </FieldDescription>
+              {fieldState.invalid && (
+                <FieldError errors={[fieldState.error]} />
+              )}
+            </Field>
+          )}
+        />
+      </FieldGroup>
+    </form>
     </Form>
   );
 }
@@ -170,8 +278,8 @@ export function MyEntityForm() {
 - **Sin `any`** — excepto al tipar rows crudos de Supabase antes de castear
 - **`interface` para props y contratos de componentes**, `type` para uniones y aliases
 - **Sin `React.FC`** — funciones normales con destructuring de props
-- **Path aliases `@/`** siempre — nunca rutas relativas que suban más de un nivel (`../../`)
-- Agrupar imports: librerías externas → `@/` internos → relativos del módulo (`./`)
+- **Path aliases `@`** siempre — nunca rutas relativas que suban más de un nivel (`../../`)
+- Agrupar imports: librerías externas → `@` internos → relativos del módulo (`./`)
 
 ```typescript
 // ✅ Props con interface
@@ -194,8 +302,8 @@ const MyComponent: React.FC<Props> = ...
 
 ```typescript
 // ✅ Server Component — llama directo al service del módulo
-import { getCachedMyEntities } from "@/modules/my-entities/services";
-import { MyEntityList } from "@/modules/my-entities/components/my-entity-list";
+import { getCachedMyEntities } from "@modules/<module>/services/some.service.ts";
+import { MyEntityList } from "@modules/<module>/components/my-entity-list";
 
 export default async function MyEntitiesPage() {
   const entities = await getCachedMyEntities();
@@ -204,10 +312,10 @@ export default async function MyEntitiesPage() {
 
 // ✅ Client Component — solo cuando hay interactividad
 "use client";
-import { MyEntityForm } from "@/modules/my-entities/components/my-entity-form";
+import { SomeForm } from "@modules/<module>/components/some-form";
 
-export default function NewMyEntityPage() {
-  return <MyEntityForm />;
+export default function page() {
+  return <SomeForm />;
 }
 ```
 
@@ -219,7 +327,7 @@ export default function NewMyEntityPage() {
 ## Estilos
 
 - **Tailwind CSS** — clases utilitarias en JSX
-- `cn()` de `@/lib/utils` para clases condicionales
+- `cn()` de `@lib/utils` para clases condicionales
 - Variantes con `cva` (class-variance-authority) en componentes con múltiples estados
 - `framer-motion` para animaciones
 
@@ -227,10 +335,10 @@ export default function NewMyEntityPage() {
 
 | Tipo | Convención | Ejemplo |
 |---|---|---|
-| Schema + tipos | `schema.ts` | `modules/tickets/schema.ts` |
-| Queries (reads) | `services.ts` | `modules/tickets/services.ts` |
-| Mutaciones | `actions.ts` | `modules/tickets/actions.ts` |
-| Hooks cliente | `hooks.ts` | `modules/tickets/hooks.ts` |
+| validation + tipos | `validation.ts` | `modules/<module>/validation/some.validation.ts` |
+| Queries (reads) | `services.ts` | `modules/<module>/services/some.service.ts` |
+| Mutaciones | `actions.ts` | `modules/<module>/actions/some.action.ts` |
+| Hooks cliente | `hooks.ts` | `modules/<module>/hooks/some.hook.ts` |
 | Componente | `kebab-case.tsx` | `ticket-form.tsx` |
 | Hook global | `use-<nombre>.ts` | `hooks/use-mobile.ts` |
 | Cliente Supabase | `client.ts / server.ts / admin.ts` | `lib/supabase/server.ts` |

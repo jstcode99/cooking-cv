@@ -60,10 +60,10 @@ bun supabase:db:push
 ### Template de migración
 
 ```sql
--- Tabla con RLS multi-tenant
+-- Tabla con RLS
 CREATE TABLE IF NOT EXISTS public.mi_tabla (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  real_estate_id uuid NOT NULL REFERENCES public.real_estates(id) ON DELETE CASCADE,
+  some_id uuid NOT NULL REFERENCES public.some(id) ON DELETE CASCADE,
   name          text NOT NULL,
   created_at    timestamptz DEFAULT now(),
   updated_at    timestamptz DEFAULT now()
@@ -71,34 +71,34 @@ CREATE TABLE IF NOT EXISTS public.mi_tabla (
 
 ALTER TABLE public.mi_tabla ENABLE ROW LEVEL SECURITY;
 
--- Solo ve sus propios datos
-CREATE POLICY "tenant_isolation_mi_tabla"
+-- Definir polices
+CREATE POLICY "some police"
   ON public.mi_tabla FOR ALL
   USING (
-    real_estate_id IN (
-      SELECT real_estate_id FROM public.real_estate_agents
-      WHERE profile_id = auth.uid()
+    id IN (
+    SELECT id FROM public.some_agents
+      WHERE id = auth.uid()
     )
   );
 
 -- Índices
-CREATE INDEX IF NOT EXISTS idx_mi_tabla_real_estate ON public.mi_tabla(real_estate_id);
-CREATE INDEX IF NOT EXISTS idx_mi_tabla_created_at ON public.mi_tabla(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_mi_tabla_some ON public.some(some_fk_id);
+CREATE INDEX IF NOT EXISTS idx_some_created_at ON public.some(created_at DESC);
 ```
 
 ## Cache — CACHE_TAGS
 
-Todos los tags están en `infrastructure/config/constants.ts`. Usar **siempre** las constantes, nunca strings crudos, si se crea un feauture con entidad nueva documentar en actuales:
+Todos los tags están en `@config/constants.ts`. Usar **siempre** las constantes, nunca strings crudos, si se crea un feauture con entidad nueva documentar en actuales:
 
 ```typescript
 // En Server Actions — invalidar al mutar
-revalidateTag(CACHE_TAGS.PROPERTY.ALL, { expire: 0 });
-revalidateTag(CACHE_TAGS.PROPERTY.DETAIL(id), { expire: 0 });
-revalidateTag(CACHE_TAGS.PROPERTY.PRINCIPAL, { expire: 0 });
+revalidateTag(CACHE_TAGS.SOME.ALL, { expire: 0 });
+revalidateTag(CACHE_TAGS.SOME.DETAIL(id), { expire: 0 });
+revalidateTag(CACHE_TAGS.SOME.PRINCIPAL, { expire: 0 });
 
 //example:
-revalidateTag(CACHE_TAGS.AGENT.PRINCIPAL, { expire: 0 });
-revalidateTag(CACHE_TAGS.AGENT.BY_REAL_ESTATE(real_estate_id), { expire: 0 });
+revalidateTag(CACHE_TAGS.SOME.PRINCIPAL, { expire: 0 });
+revalidateTag(CACHE_TAGS.SOME.BY_REAL_ESTATE(real_estate_id), { expire: 0 });
 
 // En Services — leer con cache
 unstable_cache(fn, CACHE_TAGS.KEY.SOME() | CACHE_TAGS.KEY.SOME, { revalidate: 300, tags: [CACHE_TAGS.SOME, CACHE_TAGS.SOME] })
@@ -106,39 +106,31 @@ unstable_cache(fn, CACHE_TAGS.KEY.SOME() | CACHE_TAGS.KEY.SOME, { revalidate: 30
 //example: 
   getCachedById(id: string) {
     return unstable_cache(
-      async () => this.listingPort.findById(id),
-      [CACHE_TAGS.LISTING.KEYS.BY_ID(id)],
+      async () => this.service.findById(id),
+      [CACHE_TAGS.SOME.KEYS.BY_ID(id)],
       {
         revalidate: 300,
-        tags: [CACHE_TAGS.LISTING.PRINCIPAL, CACHE_TAGS.LISTING.DETAIL(id)],
+        tags: [CACHE_TAGS.SOME.PRINCIPAL, CACHE_TAGS.SOME.DETAIL(id)],
       },
     )();
   }
 ```
 
 Tags actuales: `
-  SESSION,
-  LISTING,
-  PROPERTY,
-  USER,
-  REAL_ESTATE,
-  AGENT,
-  DASHBOARD,
-  IMPORT_JOB,
-  ENQUIRY,
+
 `.
 
 **Al añadir una entidad nueva**, agregar sus tags en `constants.ts`:
 ```typescript
-MY_ENTITY: {
-  PRINCIPAL: "my-entities",
-  ALL: "my-entity:all",
-  COUNT: "my-entity-count",
-  DETAIL: (id: string) => `my-entity:${id}`,
+SOME: {
+  PRINCIPAL: "some",
+  ALL: "some:all",
+  COUNT: "some-count",
+  DETAIL: (id: string) => `some:${id}`,
   KEYS: {
     ALL: (filter?: object) =>
-      filter ? `listing:all:${JSON.stringify(filter)}` : "listing:all",
-    BY_ID: (id: string) => `listing:${id}`
+      filter ? `some:all:${JSON.stringify(filter)}` : "some:all",
+      BY_ID: (id: string) => `some:${id}`
   }
 },
 ```
@@ -154,12 +146,10 @@ MY_ENTITY: {
 ```typescript
 // __tests__/domain/services/my-entity.service.test.ts
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { MyEntityService } from "@/domain/services/my-entity.service";
-import { MyEntityPort } from "@/domain/ports/my-entity.port";
+import { SomeService } from "@/domain/services/my-entity.service";
 
-describe("MyEntityService", () => {
-  let service: MyEntityService;
-  let mockRepo: MyEntityPort;
+describe("SomeService", () => {
+  let service: SomeService;
 
   beforeEach(() => {
     mockRepo = {
@@ -168,7 +158,7 @@ describe("MyEntityService", () => {
       delete: vi.fn(),
       // ...todos los métodos del port
     };
-    service = new MyEntityService(mockRepo);
+    service = new SomeService(mockRepo);
   });
 
   it("crea entidad correctamente", async () => {

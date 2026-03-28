@@ -10,9 +10,9 @@ description: >
 
 ## Filosofía
 
-Arquitectura **modular por dominio**: cada módulo en `src/modules/` es autónomo y agrupa
+Arquitectura **modular por dominio**: cada módulo en `@modules/` es autónomo y agrupa
 todo lo que necesita (UI, lógica, validación, acceso a datos). El código compartido vive
-en `components/`, `hooks/`, `lib/` y `types/`.
+en `components/`, `hooks/`, `lib/` y `entities/`.
 
 ## Capas y regla de dependencia
 
@@ -33,45 +33,26 @@ types/            ← Tipos globales / generados por Supabase CLI
 
 ```
 src/
-├── app/                        # (Routing) Solo rutas, layouts y params
-│   ├── (auth)/                 # Grupo de rutas de autenticación
-│   │   ├── sign-in/page.tsx
-│   │   └── sign-up/page.tsx
-│   ├── dashboard/              # Rutas protegidas del dashboard
-│   │   └── tickets/page.tsx    # Importa componentes de modules/tickets
-│   ├── api/                    # Webhooks o endpoints externos
-│   ├── layout.tsx
-│   └── page.tsx
-│
-├── modules/                    # 🎯 EL NÚCLEO (Feature/Domain Layer)
-│   ├── tickets/                # Ejemplo de módulo
-│   │   ├── components/         # UI específica del módulo (DataTables, Forms)
-│   │   ├── actions.ts          # Server Actions (escrituras, mutaciones)
-│   │   ├── services.ts         # Llamadas a Supabase (queries, reads)
-│   │   ├── schema.ts           # Schemas Zod + tipos TypeScript del módulo
-│   │   └── hooks.ts            # Hooks cliente específicos (si aplica)
-│   └── users/                  # Otro módulo...
-│       ├── components/
-│       ├── actions.ts
-│       ├── services.ts
-│       └── schema.ts
-│
-├── components/                 # UI compartida entre módulos
-│   ├── ui/                     # Componentes atómicos de shadcn/ui
-│   └── shared/                 # Componentes compuestos reutilizables
-│                               # (headers, sidebars, modals genéricos, etc.)
-│
-├── lib/                        # Configuraciones y utilidades globales
-│   ├── supabase/
-│   │   ├── client.ts           # Cliente browser (Client Components)
-│   │   ├── server.ts           # Cliente server (SSR / Server Actions)
-│   │   └── admin.ts            # Cliente admin (service_role)
-│   └── utils.ts                # cn(), helpers de Tailwind/shadcn
-│
-├── hooks/                      # Hooks globales (use-mobile, use-toast, etc.)
-└── types/                      # Tipos globales o generados por Supabase CLI
-    ├── database.types.ts       # Auto-generado por `supabase gen types`
-    └── index.ts                # Re-exports de tipos compartidos
+├── app/                                           # (Routing) Solo define rutas, layouts y recibe params
+│   ├── (auth)/                                    # Grupos de rutas
+│   ├── dashboard/
+│   └── api/                                       # Webhooks o endpoints externos
+├── components/                                    # UI Compartida
+│   ├── ui/                                        # Componentes de shadcn (atómicos)
+│   └── shared/                                    # Botones complejos, headers, etc.
+├── modules/                                       # 🎯 EL NÚCLEO (Domain/Feature Layer)
+│   ├── tickets/                                   # Ejemplo de un dominio
+│   │   ├── components/components.tsx              # UI específica de tickets (DataTables, Forms)
+│   │   ├── actions/ticket.actions.ts              # Server Actions (Equivalente al "Controller")
+│   │   ├── services/ticket.services.ts            # Llamadas a Supabase (Equivalente al "Model/Repo")
+│   │   ├── validations/tickets.validation.ts      # Validaciones Zod y tipos de TS
+│   │   └── hooks.ts                               # Hooks específicos (si aplica)
+│   └── users/                                     # Otro dominio...
+├── lib/                                           # Configuraciones globales
+│   ├── supabase/                                  # Clientes (client.ts, server.ts, admin.ts)
+│   └── utils.ts                                   # Utils de tailwind/shadcn
+├── hooks/                                         # Hooks globales (use-mobile, etc.)
+└── types/                                         # Tipos globales o generados por Supabase CLI
 ```
 
 ## Anatomía de un módulo
@@ -91,10 +72,10 @@ Cada archivo dentro de `modules/<dominio>/` tiene una responsabilidad clara:
 | Qué creas | Dónde |
 |---|---|
 | Nuevo módulo/dominio | `src/modules/<dominio>/` |
-| Schema de validación + tipos | `src/modules/<dominio>/schema.ts` |
-| Queries a Supabase (reads) | `src/modules/<dominio>/services.ts` |
-| Mutaciones / Server Actions | `src/modules/<dominio>/actions.ts` |
-| Hook cliente del módulo | `src/modules/<dominio>/hooks.ts` |
+| Schema de validación + tipos | `src/modules/<dominio>/validations/some.validation.ts` |
+| Queries a Supabase (reads) | `src/modules/<dominio>/services/some.service.ts` |
+| Mutaciones / Server Actions | `src/modules/<dominio>/actions/some.action.ts` |
+| Hook cliente del módulo | `src/modules/<dominio>/hooks/some.hook.ts` |
 | Componente UI del módulo | `src/modules/<dominio>/components/<componente>.tsx` |
 | Componente shadcn (atómico) | `src/components/ui/<componente>.tsx` |
 | Componente compartido | `src/components/shared/<componente>.tsx` |
@@ -108,13 +89,13 @@ Cada archivo dentro de `modules/<dominio>/` tiene una responsabilidad clara:
 
 ## Al añadir un módulo nuevo, sigue este orden
 
-1. Crear carpeta `src/modules/<dominio>/`
+1. Crear carpeta `@modules/<dominio>/`
 2. `schema.ts` → definir tipos Zod + inferir tipos TypeScript
 3. `services.ts` → implementar queries de lectura con el cliente Supabase server
 4. `actions.ts` → implementar Server Actions de escritura, usar schema para validar
 5. `hooks.ts` → (si hay lógica cliente) wrappear con React Query u otro
 6. `components/` → construir la UI específica consumiendo actions/services
-7. `src/app/<ruta>/page.tsx` → crear la página e importar componentes del módulo
+7. `@app/<ruta>/page.tsx` → crear la página e importar componentes del módulo
 
 ## Reglas importantes
 

@@ -40,7 +40,7 @@ bun lint           # ESLint
 
 ## Checklist de patrones
 
-- [ ] Adapters y servicios solo en `appModule()`
+- [ ] Adapters y servicios solo en `modules()`
 - [ ] Clientes Supabase solo desde `lib/supabase/`
 - [ ] `CACHE_TAGS` en `revalidateTag` (no strings crudos)
 - [ ] Sin `any` en TypeScript
