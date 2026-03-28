@@ -1,175 +1,106 @@
 ---
 name: code-conventions
 description: >
-  Convenciones de código reales del proyecto cooking-cv — TypeScript, Server Actions,
-  React, formularios, hooks, cache, i18n. Usar SIEMPRE al escribir o revisar cualquier
+  Convenciones de código del proyecto — TypeScript, Server Actions, React,
+  formularios, hooks, cache. Usar SIEMPRE al escribir o revisar cualquier
   archivo TypeScript/React del proyecto, o cuando el usuario pregunte cómo implementar algo.
 ---
 
-# Convenciones de Código — cooking-cv
+# Convenciones de Código — Arquitectura Modular
 
 ## Server Actions
 
-Todo action vive en `application/actions/<entidad>.actions.ts` con esta estructura exacta:
+Todo action vive en `src/modules/<dominio>/actions.ts` con esta estructura exacta:
 
 ```typescript
 "use server";
 
 import { revalidatePath, revalidateTag } from "next/cache";
-import { cookies } from "next/headers";
-import { withServerAction } from "@/shared/hooks/with-server-action";
-import { getLangServerSide } from "@/shared/utils/lang";
-import { createRouter } from "@/i18n/router";
-import { initI18n } from "@/i18n/server";
-import { appModule } from "../modules/app.module";
-import { CACHE_TAGS } from "@/infrastructure/config/constants";
-import { myEntitySchema } from "@/application/validation/my-entity.schema";
+import { createClient } from "@/lib/supabase/server";
+import { myEntitySchema } from "./schema";
 
-export const createMyEntityAction = withServerAction(
-  async (formData: FormData) => {
-    const lang = await getLangServerSide();
-    const cookieStore = await cookies();
-    const routes = createRouter(lang);
-    const i18n = await initI18n(lang);
-    const t = i18n.getFixedT(lang);
+export async function createMyEntityAction(formData: FormData) {
+  const supabase = await createClient();
 
-    const { myEntityService, sessionService } = await appModule(lang, {
-      cookies: cookieStore,
-    });
+  const raw = Object.fromEntries(formData);
+  const input = myEntitySchema.parse(raw);
 
-    const raw = Object.fromEntries(formData);
-    const input = await myEntitySchema.validate(raw, {
-      abortEarly: false,
-      stripUnknown: true,
-    });
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
 
-    const userId = await sessionService.getCurrentUserId();
-    if (!userId) throw new Error(t("common:exceptions.unauthorized"));
+  const { error } = await supabase
+    .from("my_entities")
+    .insert({ ...input, user_id: user.id });
 
-    await myEntityService.create(input);
+  if (error) throw new Error(error.message);
 
-    revalidatePath(routes.dashboard());
-    revalidateTag(CACHE_TAGS.MY_ENTITY.ALL, { expire: 0 });
-    revalidateTag(CACHE_TAGS.MY_ENTITY.PRINCIPAL, { expire: 0 });
-  },
-);
+  revalidatePath("/dashboard/my-entities");
+}
 ```
 
 **Reglas de actions:**
 - Siempre `"use server"` al inicio del archivo
-- Siempre `withServerAction` — nunca try/catch manual
-- Siempre `{ abortEarly: false, stripUnknown: true }` en Yup
-- Siempre invalidar cache con `revalidateTag` usando `CACHE_TAGS`
-- `getLangServerSide()` y `cookies()` antes de `appModule()`
-- `sessionService.getCurrentUserId()` para verificar auth cuando se necesite
+- Instanciar el cliente Supabase **dentro** del action con `createClient()` — nunca recibirlo como parámetro
+- Validar con Zod (`.parse()` lanza automáticamente si hay error) usando el schema del mismo módulo (`./schema`)
+- Verificar auth con `supabase.auth.getUser()` cuando la operación lo requiera
+- Invalidar rutas con `revalidatePath` y/o tags con `revalidateTag`
+- Sin capas intermedias: el action llama **directamente** a Supabase, no a un servicio ni adapter
 
-## appModule — registro de servicios
+## Services — Queries de lectura
 
-`application/modules/app.module.ts` es el **único lugar** donde se instancian adapters y servicios.
-
-```typescript
-// Al agregar una entidad nueva, añadir en app.module.ts:
-const myAdapter = new SupabaseMyEntityAdapter(supabase);
-const myService = new MyEntityService(myAdapter, lang);
-
-return {
-  // ...resto de servicios,
-  myService,
-};
-```
-
-Nunca instancies adapters o servicios fuera de `appModule()`.
-
-## Servicios de dominio con cache
+Todo read/query vive en `src/modules/<dominio>/services.ts`:
 
 ```typescript
-// domain/services/my-entity.service.ts
 import { unstable_cache } from "next/cache";
-import { CACHE_TAGS } from "@/infrastructure/config/constants";
+import { createClient } from "@/lib/supabase/server";
 
-export class MyEntityService {
-  constructor(private port: MyEntityPort, private lang: Lang = "es") {}
+// Sin cache — para reads directos o datos que cambian mucho
+export async function getMyEntityById(id: string) {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("my_entities")
+    .select("*")
+    .eq("id", id)
+    .single();
 
-  // Sin cache — para mutations y reads directos
-  getById(id: string) {
-    return this.port.getById(id);
-  }
-
-  // Con cache — para reads en Server Components
-  getCachedById(id: string) {
-    return unstable_cache(
-      async () => this.port.getById(id),
-      [`${CACHE_TAGS.MY_ENTITY.DETAIL}:${id}`],
-      { revalidate: 300, tags: [CACHE_TAGS.MY_ENTITY.ALL, `${CACHE_TAGS.MY_ENTITY.DETAIL}:${id}`] }
-    )();
-  }
+  if (error) throw new Error(error.message);
+  return data;
 }
+
+// Con cache — para Server Components que leen datos estables
+export const getCachedMyEntities = unstable_cache(
+  async () => {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("my_entities")
+      .select("*");
+
+    if (error) throw new Error(error.message);
+    return data;
+  },
+  ["my-entities-all"],
+  { revalidate: 300, tags: ["my-entities"] },
+);
 ```
 
-**Patrón:** método directo + método `getCached*` para cada read que se usa en Server Components.
+**Reglas de services:**
+- Solo lecturas (`select`) — las escrituras van siempre en `actions.ts`
+- Instanciar `createClient()` **dentro** de cada función — no a nivel módulo
+- Exponer dos variantes cuando aplique: función directa + `getCached*` con `unstable_cache`
+- Importar el cliente desde `@/lib/supabase/server` — nunca el cliente browser
 
-## Formularios en Client Components
-
-se debe usar `@/components/ui/form` y sus subcomponentes que ya integran useForm para validar errores
-tambien seccionar cuando sean formularios muy grandes en secciones con Formmmmm.Set
-
-```typescript
-import { Form } from "@/components/ui/form";
-```
-
+## Schemas Zod
 
 ```typescript
-"use client";
+// src/modules/<dominio>/schema.ts
+import { z } from "zod";
 
-import { useForm } from "react-hook-form";
-import { yupResolver } from "@hookform/resolvers/yup";
-import { useTranslation } from "react-i18next";
-import { toast } from "sonner";
-import { useServerMutation } from "@/shared/hooks/use-server-mutation.hook";
-import { Form } from "@/components/ui/form";
-import { mySchema, MyInput } from "@/application/validation/my-entity.schema";
-import { createMyEntityAction } from "@/application/actions/my-entity.actions";
-
-export function MyEntityForm() {
-  const { t } = useTranslation("my-namespace");
-
-  const form = useForm<MyInput>({
-    resolver: yupResolver(mySchema) as any,
-    defaultValues: { name: "" },
-    mode: "onBlur",
-  });
-
-  const { action, isPending } = useServerMutation({
-    action: createMyEntityAction,
-    setError: form.setError,
-    onSuccess: () => toast.success(t("messages.created")),
-    onError: (err) => toast.error(err.message),
-  });
-
-  return (
-    <Form {...form}>
-      <form action={action}>
-        {/* campos */}
-        {/* Usar <Form.Set> para dividir por secciones, y usar los componentes que propociona <Form.Input> */}
-      </form>
-    </Form>
-  );
-}
-```
-
-## Schemas Yup
-
-```typescript
-// application/validation/my-entity.schema.ts
-import * as yup from "yup";
-import { nameSchema } from "./base/name.schema";  // reusar base schemas
-
-export const myEntitySchema = yup.object({
-  name: nameSchema,
-  description: yup.string().optional(),
+export const myEntitySchema = z.object({
+  name: z.string().min(1, "El nombre es requerido").max(100),
+  description: z.string().optional(),
 });
 
-export type MyEntityInput = yup.InferType<typeof myEntitySchema>;
+export type MyEntityInput = z.infer<typeof myEntitySchema>;
 
 export const defaultMyEntityValues: MyEntityInput = {
   name: "",
@@ -177,20 +108,75 @@ export const defaultMyEntityValues: MyEntityInput = {
 };
 ```
 
-Schemas base disponibles en `application/validation/base/`: `name`, `email`, `phone`, `slug`, `price`, `description`, `title`, `id`, `image`, `file`, `password`, `confirm-password`, `address`, `latitude`, `bedrooms`, `bathrooms`, `total_area`, `built_area`, `lot_area`, `floors`, `year_built`, `parking_spots`, `amenities`, `status`, `whatsapp`, y más.
+**Reglas de schemas:**
+- Usar **Zod** (no Yup) — `.parse()` para validar en actions, `safeParse()` cuando se quiere manejar el error manualmente
+- El schema es la **fuente de verdad** de tipos: siempre `z.infer<typeof schema>` en lugar de tipos manuales
+- Un archivo `schema.ts` por módulo — si crece mucho, dividir en `schema/<nombre>.schema.ts` dentro del módulo
+- Los actions y hooks del mismo módulo lo importan con `"./schema"` (relativo)
+
+## Formularios en Client Components
+
+Usar `react-hook-form` con `zodResolver` y los componentes de `@/components/ui/form`:
+
+```typescript
+"use client";
+
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "sonner";
+import { Form } from "@/components/ui/form";
+import { myEntitySchema, MyEntityInput, defaultMyEntityValues } from "../schema";
+import { createMyEntityAction } from "../actions";
+
+export function MyEntityForm() {
+  const form = useForm<MyEntityInput>({
+    resolver: zodResolver(myEntitySchema),
+    defaultValues: defaultMyEntityValues,
+    mode: "onBlur",
+  });
+
+  async function onSubmit(data: MyEntityInput) {
+    const formData = new FormData();
+    Object.entries(data).forEach(([k, v]) => formData.append(k, String(v)));
+
+    try {
+      await createMyEntityAction(formData);
+      toast.success("Creado correctamente");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error inesperado");
+    }
+  }
+
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)}>
+        {/* Usar <Form.Field>, <Form.Item>, <Form.Label>, <Form.Control>, <Form.Message> */}
+        {/* Para formularios grandes, dividir en secciones con <Form.Set> */}
+      </form>
+    </Form>
+  );
+}
+```
+
+**Reglas de formularios:**
+- Siempre `zodResolver` — nunca `yupResolver`
+- Importar schema y tipos desde `"../schema"` (mismo módulo, relativo)
+- Llamar el action directamente — sin hooks wrapper intermedios
+- `mode: "onBlur"` por defecto para validación
+- Dividir formularios grandes en secciones con `<Form.Set>`
 
 ## TypeScript
 
-- **Sin `any`** — excepto mappers donde el row de Supabase aún no tiene tipo
-- **`interface` para props y contratos**, `type` para uniones
-- **Sin `React.FC`** — funciones normales con destructuring
-- **Path aliases `@/`** siempre — nunca `../../`
-- Agrupar imports: librerías externas → `@/` internos → tipos
+- **Sin `any`** — excepto al tipar rows crudos de Supabase antes de castear
+- **`interface` para props y contratos de componentes**, `type` para uniones y aliases
+- **Sin `React.FC`** — funciones normales con destructuring de props
+- **Path aliases `@/`** siempre — nunca rutas relativas que suban más de un nivel (`../../`)
+- Agrupar imports: librerías externas → `@/` internos → relativos del módulo (`./`)
 
 ```typescript
 // ✅ Props con interface
 interface MyComponentProps {
-  entity: MyEntity;
+  entity: MyEntityInput;
   onSave?: () => void;
 }
 
@@ -202,49 +188,38 @@ const MyComponent: React.FC<Props> = ...
 
 ## React / Next.js
 
-- **Server Components por defecto** — `"use client"` solo para: hooks, event handlers, useState, useEffect, APIs de browser
-- Páginas en `app/[lang]/<ruta>/page.tsx`, componentes locales sin `_` prefix en `features/<dominio>/`
-- Componentes UI base en `app/components/ui/` (shadcn)
+- **Server Components por defecto** — `"use client"` solo para: hooks de estado, event handlers, `useState`, `useEffect`, APIs de browser
+- Las páginas en `app/<ruta>/page.tsx` importan **directamente** desde el módulo correspondiente
+- No existe una capa de contenedor entre la página y el módulo
 
 ```typescript
-// ✅ Server Component (default) — lee datos directo
-export default async function PropertiesPage() {
-  const props = await propertyService.getCachedAll();
-  return <PropertyList properties={props} />;
+// ✅ Server Component — llama directo al service del módulo
+import { getCachedMyEntities } from "@/modules/my-entities/services";
+import { MyEntityList } from "@/modules/my-entities/components/my-entity-list";
+
+export default async function MyEntitiesPage() {
+  const entities = await getCachedMyEntities();
+  return <MyEntityList entities={entities} />;
 }
 
 // ✅ Client Component — solo cuando hay interactividad
 "use client";
-export function PropertyForm() {
-  const { action } = useServerMutation({ ... });
-  return <form action={action}>...</form>;
+import { MyEntityForm } from "@/modules/my-entities/components/my-entity-form";
+
+export default function NewMyEntityPage() {
+  return <MyEntityForm />;
 }
 ```
-
-## i18n
-
-- Todo texto visible al usuario via `t()` de `react-i18next` por `useTranslation  (client) o `initI18n` (server)
-- Namespace por dominio: `properties`, `listings`, `auth`, `common`, `dashboard`, etc.
-- Estructura del json
- 
-```json
-"title":"val",
-"subtitle":"val",
-"other":{},
-...
-```
-- Rutas: `getLangServerSide()` en server, `useRoutes()` en client
-- Traducciones en `locales/es/` y `locales/en/`
 
 ## Íconos e imágenes
 
 - Íconos: `@iconify/react` → `<Icon icon="mdi:home" />` o `@tabler/icons-react`
-- Imágenes: `next/image` con `fill` o dimensiones explícitas
+- Imágenes: `next/image` con `fill` o dimensiones explícitas — nunca `<img>`
 
 ## Estilos
 
 - **Tailwind CSS** — clases utilitarias en JSX
-- `cn()` de `@/app/lib/utils` para clases condicionales
+- `cn()` de `@/lib/utils` para clases condicionales
 - Variantes con `cva` (class-variance-authority) en componentes con múltiples estados
 - `framer-motion` para animaciones
 
@@ -252,13 +227,10 @@ export function PropertyForm() {
 
 | Tipo | Convención | Ejemplo |
 |---|---|---|
-| Entidad | `<nombre>.entity.ts` | `property.entity.ts` |
-| Enum | `<nombre>.enums.ts` | `property.enums.ts` |
-| Puerto | `<nombre>.port.ts` | `property.port.ts` |
-| Servicio | `<nombre>.service.ts` | `property.service.ts` |
-| Adapter | `supabase-<nombre>.adapter.ts` | `supabase-property.adapter.ts` |
-| Action | `<nombre>.actions.ts` | `property.action.ts` |
-| Schema | `<nombre>.schema.ts` o `.validation.ts` | `property.schema.ts` |
-| Mapper | `<nombre>.mapper.ts` | `property.mapper.ts` |
-| Componente | `kebab-case.tsx` | `property-form.tsx` |
-| Hook | `use-<nombre>.ts` | `use-server-mutation.hook.ts` |
+| Schema + tipos | `schema.ts` | `modules/tickets/schema.ts` |
+| Queries (reads) | `services.ts` | `modules/tickets/services.ts` |
+| Mutaciones | `actions.ts` | `modules/tickets/actions.ts` |
+| Hooks cliente | `hooks.ts` | `modules/tickets/hooks.ts` |
+| Componente | `kebab-case.tsx` | `ticket-form.tsx` |
+| Hook global | `use-<nombre>.ts` | `hooks/use-mobile.ts` |
+| Cliente Supabase | `client.ts / server.ts / admin.ts` | `lib/supabase/server.ts` |

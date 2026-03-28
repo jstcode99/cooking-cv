@@ -104,10 +104,8 @@ cd ~/projects/cooking-cv && git pull origin master
 Closes KRO-X
 
 ## Cambios
-- `domain/`: [descripción]
-- `infrastructure/`: [descripción]
-- `application/`: [descripción]
-- `features/`: [descripción]
+- `app/`: [descripción]
+- `modules/`: [descripción]
 
 ## Commits
 [git log --oneline output]
